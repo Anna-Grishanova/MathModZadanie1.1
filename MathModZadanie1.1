@@ -1,0 +1,123 @@
+#Гришанова Анна – для региона 25 рассчитайте урожайность пшеницы в 2013году,
+#взяв для рассчета средние суммы активных температур за предыдущие 12 лет
+# Регион 25 - Приморский край, главный город - Владивосток
+# Проверка рабочей дирректории
+rm(list=ls())
+getwd()
+#Устанавливаем пакеты
+install.packages("rnoaa")
+library(tidyverse)
+library(rnoaa)
+library(lubridate)
+#Скачиваем список метеостанций
+station_data = ghcnd_stations() 
+#сохраним список
+write.csv(station_data, file="station_data.csv")
+station_data=read.csv("station_data.csv")
+
+#Формируем список метеостанций 
+#Создадим таблицу с именем региона и его координатами
+vladivostok = data.frame(id = "VLADIVOSTOK", latitude = 43.1056200,longitude= 131.8735300)
+vladivostok_around = meteo_nearby_stations(lat_lon_df = vladivostok, station_data = station_data,
+                                           limit = 10, var = c("PRCP", "TAVG"),
+                                           year_min = 2001, year_max = 2013)
+#прочитаем справку командой meteo_nearby_stations
+?meteo_nearby_stations
+
+vladivostok_id = vladivostok_around[["vladivostok"]][["id"]][1]
+
+# Получаем данные с одной метеостанции
+
+all_vladivostok_data = meteo_tidy_ghcnd(stationid = vladivostok_id)
+
+# Смотрим все данные с метеостанции
+
+summary(vladivostok_id)
+
+# промежуточный объект, куда мы будем загружать данные с метеостанции
+
+all_i=data.frame()
+
+# а сюда со всех метеостанций
+
+all_vladivostok_meteodata = data.frame()
+
+# а теперь делаем цикл
+
+for(i in 1:10)
+{
+  vladivostok_id=vladivostok_around[["VLADIVOSTOK"]][["id"]]
+  print(i)
+  print(vladivostok_id)
+  all_i = meteo_tidy_ghcnd(stationid = vladivostok_id[i], var="TAVG", date_min = "2001-01-01", date_max = "2012-12-31")
+  all_i  =  all_i [, c ( " id " , " date " , " tavg "  )]
+  all_vladivostok_meteodata=rbind(all_vladivostok_meteodata, all_i)
+}
+# Записываем все результаты
+write.csv(all_vladivostok_meteodata, "all_vladivostok_meteodata.csv")
+# добавим колонку со средней температурой
+all_vladivostok_meteodata = mutate(all_vladivostok_data, 
+                                   tavg = (all_vladivostok_data$tmax + all_vladivostok_data$tmin)/2)
+
+write.csv(all_vladivostok_meteodata, "all_vladivostok_meteodata.csv")
+# а теперь откроем
+all_vladivostok_meteodata=read.csv("all_vladivostok_meteodata.csv")
+# и посмотрим
+str(all_vladivostok_meteodata)
+library(lubridate)
+# а теперь добавим день, месяц, год
+all_vladivostok_meteodata = mutate(all_vladivostok_meteodata, year = year(date), 
+                                   month = month(date), day = day(date))
+
+# и посмотрим, что получилось
+str(all_vladivostok_meteodata)
+#отфильтруем данные за 2001-2012 года
+years_vladivostok_meteodata =filter(all_vladivostok_meteodata, year %in% c(2001:2012))
+#проверим результат
+str(years_vladivostok_meteodata)
+summary(years_vladivostok_meteodata)
+# Разделим температуру на 10, чтобы привести в нормальный вид
+years_vladivostok_meteodata[,"tavg"] = years_vladivostok_meteodata$tavg/10
+summary (years_vladivostok_meteodata)
+# Превратим в нули все NA и где tavg<5 
+years_vladivostok_meteodata[is.na(years_vladivostok_meteodata$tavg),"tavg"] = 0
+years_vladivostok_meteodata[years_vladivostok_meteodata$tavg<5, "tavg"] = 0
+#проверяем
+summary(years_vladivostok_meteodata)
+# группируем по метеостанциям, годам и месяцам
+alldays = group_by(years_vladivostok_meteodata,id,year,month)
+#просуммируем температуру по этим группам
+sumT_alldays_vladivostok = summarize(alldays, tsum = sum(tavg))
+sumT_alldays_vladivostok
+# максимальная температура за месяц = 
+859/31
+# то есть, средняя дневная температура равна 27,7, что вполне адекватно
+summary(sumT_alldays_vladivostok) 
+# Сгруппируем данные по месяцам  
+groups_vladivostok_months = group_by(sumT_alldays_vladivostok,month)
+groups_vladivostok_months
+# найдем для всех метеостанций и всех лет среднее значение температуры по месяцам
+sumT_months = summarize(groups_vladivostok_months, St = mean(tsum))
+sumT_months
+
+#Зададим все необходимые для расчёта переменные
+y=1
+afi=c(0.00, 0.00, 0.00, 32.11, 26.34, 25.64, 23.20, 18.73, 16.30, 13.83, 0.00, 0.00)
+bfi=c(0.00, 0.00, 0.00, 11.30, 9.26, 9.03, 8.16, 6.59, 5.73, 4.87, 0.00, 0.00)
+di=c(0.00, 0.00, 0.00, 0.33, 1.00, 1.00, 1.00, 0.32, 0.00, 0.00, 0.00, 0.00)
+Kf=300
+Qj=1600
+Lj=2.2
+Ej=25
+i={1;2;3;4;5;6;7;8;9;10;11;12}
+# Рассчитаем Fi по месяцам
+sumT_months = mutate(sumT_months, Fi = afi+bfi*y*St)
+#Рассчитаем Yi
+sumT_months = mutate(sumT_months, Yi = ((Fi*di)*Kf)/(Qj*Lj*(100 - Ej)))
+##  Расчитываем урожай 
+Yield = sum(sumT_months$Yi);  
+Yield
+# Ответ: 21,7 ц/га
+#По статистическим данным 2013 года средняя урожайность в регионе составляла 23,9 ц/га
+#полученный ответ вполне адекватен, учитывая то, что отбрасывались очень жаркие дни (>30 град.)
+
